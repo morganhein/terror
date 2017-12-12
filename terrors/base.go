@@ -1,11 +1,11 @@
 package terrors
 
 import (
-	"fmt"
 	"runtime"
 	"strings"
 
 	. "github.com/morganhein/terror"
+	"github.com/morganhein/terror/stack"
 )
 
 //New creates a new Terror with the passed error message.
@@ -35,11 +35,16 @@ func SetType(errorType interface{}) Terror {
 	return t
 }
 
-func caller(depth int) (pkg, fn, line string) {
+func caller(depth int) (c *stack.Call) {
 	if pc, _, l, ok := runtime.Caller(depth); ok {
 		if f := runtime.FuncForPC(pc); f != nil {
-			pkg, fn = splitPkgFn(f.Name())
-			line = fmt.Sprintf("%d", l)
+			pkg, fn := splitPkgFn(f.Name())
+			c = &stack.Call{
+				Full: f.Name(),
+				Pkg:  pkg,
+				Fn:   fn,
+				Line: l,
+			}
 			return
 		}
 	}

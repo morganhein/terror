@@ -9,7 +9,6 @@ type Terror interface {
 	SetType(errorType interface{}) Terror
 	WithField(key string, value interface{}) Terror
 	WithError(error) Terror
-	WithTrace(message string) Terror
 
 	IsType(other interface{}) bool
 	ErrorType() string

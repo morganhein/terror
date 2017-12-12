@@ -13,6 +13,7 @@ import (
 
 type terror struct {
 	traces    map[string]*trace // map[function scope]Trace
+	order     []string
 	lock      *sync.RWMutex
 	errorType interface{}
 }
@@ -22,64 +23,80 @@ func initTerror(message string, depth int) *terror {
 		lock:   &sync.RWMutex{},
 		traces: make(map[string]*trace),
 	}
-	_ = t.insureTrace(message, depth+1)
+	_, _ = t.insureTrace(message, depth+1)
 	return t
 }
 
 //Error returns the Terror in string format
 func (t *terror) Error() string {
 	err := ""
-	for k, v := range t.traces {
-		err += fmt.Sprintf("--- %s\n%s", k, v.Error())
+
+	// iterate the traces in reverse order, LIFO
+	for i := len(t.order) - 1; i >= 0; i-- {
+		k := t.order[i]
+		v := t.traces[k]
+		err += fmt.Sprintf("--- %s\n", k)
+		if t.errorType != nil {
+			err += fmt.Sprintf("errType: %T\n", t.errorType)
+		}
+		if len(v.errMsg) > 0 {
+			err += fmt.Sprintf("errMsg: %s\n", v.errMsg)
+		}
+
+		// iterate the fields added to the trace in FIFO order
+		for _, f := range v.fields {
+			err += fmt.Sprintf("%v: %s=%s\n", f.CallInfo.Line, f.Name, f.Msg)
+		}
+
 	}
 	return err
 }
 
 //SetType sets the type for the overall Terror
 func (t *terror) SetType(errorType interface{}) Terror {
-	t.setType(errorType, 4)
+	t.setType(errorType, 3)
 	return t
 }
 
 func (t *terror) setType(errorType interface{}, depth int) {
 	t.lock.Lock()
 	defer t.lock.Unlock()
-	_ = t.insureTrace("", depth)
+	_, _ = t.insureTrace("", depth+1)
 	t.errorType = errorType
 }
 
 //WithField adds the key, value pair to this Terror
 func (t *terror) WithField(key string, value interface{}) Terror {
-	t.withField(key, value, 4)
+	t.withField(key, value, 3)
 	return t
 }
 
 func (t *terror) withField(key string, value interface{}, depth int) {
 	t.lock.Lock()
 	defer t.lock.Unlock()
-	tr := t.insureTrace("", depth)
-	tr.fields[key] = value
+	tr, call := t.insureTrace("", depth+1)
+	tr.fields = append(tr.fields, &stack.Entry{
+		Name:     key,
+		Msg:      value,
+		CallInfo: call,
+	})
 }
 
 //WithError adds the passed error to this Terror
 func (t *terror) WithError(err error) Terror {
-	t.withError(err, 4)
+	t.withError(err, 3)
 	return t
 }
 
 func (t *terror) withError(err error, depth int) {
 	t.lock.Lock()
 	defer t.lock.Unlock()
-	tr := t.insureTrace("", depth)
-	tr.fields["error"] = err
-}
-
-//WithTrace adds a stack trace containing of package/function/line number to this Terror
-func (t *terror) WithTrace(message string) Terror {
-	t.lock.Lock()
-	defer t.lock.Unlock()
-	_ = t.insureTrace(message, 3)
-	return t
+	tr, call := t.insureTrace("", depth+1)
+	tr.fields = append(tr.fields, &stack.Entry{
+		Name:     "error",
+		Msg:      err.Error(),
+		CallInfo: call,
+	})
 }
 
 //Trace returns all the Traces added to this Terror
@@ -112,27 +129,33 @@ func (t *terror) IsType(other interface{}) bool {
 	return type1 == type2
 }
 
-func (t *terror) insureTrace(message string, depth int) (tr *trace) {
+func (t *terror) insureTrace(message string, depth int) (tr *trace, call *stack.Call) {
 	if t.traces == nil {
 		t.traces = make(map[string]*trace)
 	}
-	pkg, fn, _ := caller(depth)
-	// insure the trace exists in the map
-	if _, ok := t.traces[pkg+"."+fn]; !ok {
-		t.traces[pkg+"."+fn] = &trace{
-			fields:  make(map[string]interface{}),
-			message: message,
-		}
+	if t.order == nil {
+		t.order = make([]string, 0)
 	}
-	tr = t.traces[pkg+"."+fn]
+	call = caller(depth)
+	// insure the trace exists in the map
+	if _, ok := t.traces[call.Full]; !ok {
+		t.traces[call.Full] = &trace{
+			fields: make([]*stack.Entry, 0, 1),
+			errMsg: message,
+		}
+		t.order = append(t.order, call.Full)
+	}
+	//set return with default value
+	tr = t.traces[call.Full]
 	// if the message is blank, don't try to over-write
 	if message == "" {
+		//fmt.Println(t)
 		return
 	}
 	// set the message if it's different than what was there previously
-	if val, ok := t.traces[pkg+"."+fn]; ok && val.message != message {
-		val.message = message
-		t.traces[pkg+"."+fn] = val
+	if val, ok := t.traces[call.Full]; ok && val.errMsg != message {
+		val.errMsg = message
+		t.traces[call.Full] = val
 	}
 	return
 }

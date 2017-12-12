@@ -5,31 +5,45 @@ import (
 	"fmt"
 	"testing"
 
+	. "github.com/morganhein/terror"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestCaller(t *testing.T) {
-	pkg, fn, line := caller(1)
-	assert.Equal(t, "github.com/morganhein/terror/terrors", pkg)
-	assert.Equal(t, "TestCaller", fn)
-	assert.NotEmpty(t, line)
-	fmt.Println("")
+	c := caller(1)
+	assert.Equal(t, "github.com/morganhein/terror/terrors.TestCaller", c.Full)
+	assert.Equal(t, "TestCaller", c.Fn)
+	assert.NotEmpty(t, c.Line)
+}
+
+func TestCallerOnEmbeddedFunc(t *testing.T) {
+	testTerrorToErrorSecondary := func(ter Terror) {
+		ter.WithError(errors.New("deeper terror error"))
+	}
+
+	ter := New("new terror")
+	testTerrorToErrorSecondary(ter)
+
+	//todo: assertions. srsly.
 }
 
 func TestNew(t *testing.T) {
+	c := caller(1)
 	te := New("new terror")
+	x := fmt.Sprintf("%s.%s", c.Pkg, c.Fn)
+
 	assert.NotNil(t, te)
 	assert.Len(t, te.Trace(), 1)
 	ts := te.Trace()
-	pkg, fn, _ := caller(1)
-	assert.NotNil(t, ts[pkg+"."+fn])
-	assert.Equal(t, "new terror", te.Trace()["error"].Message())
+	assert.NotNil(t, ts[x])
+	assert.Equal(t, "new terror", ts[x].Message())
 }
 
 func TestWithError(t *testing.T) {
+	c := caller(1)
 	te := WithError(errors.New("new error"))
-	fields := te.Trace()["error"].Fields()
-	val, ok := fields["error"].(error)
-	assert.True(t, ok)
-	assert.Equal(t, "new error", val.Error())
+	x := fmt.Sprintf("%s.%s", c.Pkg, c.Fn)
+
+	fields := te.Trace()[x].Fields()
+	assert.Equal(t, "new error", fields[0].Msg)
 }

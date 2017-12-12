@@ -2,38 +2,35 @@ package terrors
 
 import (
 	"fmt"
-	"reflect"
+
+	"github.com/morganhein/terror/stack"
 )
 
 type trace struct {
-	errorType interface{}
-	message   string
-	fields    map[string]interface{} // map[key]value
+	errMsg string
+	fields []*stack.Entry // map[key]value
 }
 
 //Error returns this Trace in string format
 func (t *trace) Error() string {
 	err := ""
-	if t.errorType != nil {
-		err += fmt.Sprintf("type: %s\n", reflect.TypeOf(t.errorType))
-	}
-	if len(t.message) > 0 {
-		err += fmt.Sprintf("message: %s\n", t.message)
+	if len(t.errMsg) > 0 {
+		err += fmt.Sprintf("errMsg: %s\n", t.errMsg)
 	}
 	if len(t.fields) > 0 {
-		for k, v := range t.fields {
-			err += fmt.Sprintf("%s: %s\n", k, v)
+		for _, v := range t.fields {
+			err += fmt.Sprintf("%s: %s\n", v.Name, v.Msg)
 		}
 	}
 	return err
 }
 
-//Message returns the error message associated to this Trace.
+//Message returns the error errMsg associated to this Trace.
 func (t *trace) Message() string {
-	return t.message
+	return t.errMsg
 }
 
 //Fields returns all the key, value pairs associated to this Trace.
-func (t *trace) Fields() map[string]interface{} {
+func (t *trace) Fields() []*stack.Entry {
 	return t.fields
 }
